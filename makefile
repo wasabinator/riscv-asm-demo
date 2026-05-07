@@ -12,7 +12,7 @@ ASFLAGS = -mno-relax
 DEPLOY_HOST = cpi@uConsole-R01
 DEPLOY_PATH = /home/cpi
 
-demo: demo.o
+demo: demo.o sine.o
 	$(LD) -o $@ $<
 
 %.o: %.s

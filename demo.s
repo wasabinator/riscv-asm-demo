@@ -17,6 +17,8 @@
 #   s6 = tty fd
 #   s7 = new VT number (from VT_OPENQRY)
 #   s8 = original VT number
+#   s9 = keyboard fd
+#   s10 = screen save buffer
 #
 # Colour format: 0x00RRGGBB  (R01 is always 32bpp, 4 bytes/pixel)
 
@@ -100,7 +102,13 @@ draw:
     li      t2, FRAME_MAX
     bge     t1, t2, .done
     li      a0, 0x000080FF
-    call    fill
+    #call    fill
+
+    mv      a0, s10             # src = fb_base
+    mv      a1, s1              # dst = save buffer
+    mv      a2, s5              # byte count
+    call    fb_copy
+
     call    kb_check
     li      t0, KEY_ESC
     bne     a0, t0, .loop
@@ -113,6 +121,9 @@ draw:
 # fb_open — open /dev/fb0, read screen info, mmap pixel buffer
 # sets s0=fd s1=fb_base s2=width s3=height s4=bpp_bytes s5=fb_size
 fb_open:
+    addi    sp, sp, -8
+    sd      ra, 0(sp)
+
     # open /dev/tty
     li      a0, AT_FDCWD
     la      a1, tty_path
@@ -124,7 +135,7 @@ fb_open:
     mv      s6, a0
 
     # save current VT
-    addi    sp, sp, -16     # allocate space on stack for struct 
+    addi    sp, sp, -16     # allocate space on stack for struct
     mv      a0, s6
     li      a1, VT_GETSTATE
     mv      a2, sp
@@ -134,33 +145,6 @@ fb_open:
     addi    sp, sp, 16      # restore stack
     die_if_neg 2
 
-    # use vt7
-    li s7, 7
-
-    # switch to it
-    mv      a0, s6
-    li      a1, VT_ACTIVATE
-    mv      a2, s7
-    li      a7, SYS_ioctl
-    ecall
-    die_if_neg 4
-
-    # wait for it
-    mv      a0, s6
-    li      a1, VT_WAITACTIVE
-    mv      a2, s7
-    li      a7, SYS_ioctl
-    ecall
-    die_if_neg 5
-
-    # set KD_GRAPHICS
-    mv      a0, s6
-    li      a1, KDSETMODE
-    li      a2, KD_GRAPHICS
-    li      a7, SYS_ioctl
-    ecall
-    die_if_neg 6
-
     # open /dev/fb0
     li      a0, AT_FDCWD
     la      a1, fb_path
@@ -168,7 +152,7 @@ fb_open:
     li      a3, 0
     li      a7, SYS_openat
     ecall
-    die_if_neg 7
+    die_if_neg 3
     mv      s0, a0
 
     # FBIOGET_VSCREENINFO
@@ -176,8 +160,9 @@ fb_open:
     la      a2, fb_var
     li      a7, SYS_ioctl
     ecall
-    die_if_neg 8
+    die_if_neg 4
 
+    # get screen dimensions
     la      t0, fb_var
     lw      s2, 0(t0)
     lw      s3, 4(t0)
@@ -196,12 +181,48 @@ fb_open:
     li      a7, SYS_mmap
     ecall
     die_if_neg 9
-
     mv      s1, a0
+
+    # snapshow the x11 display so we can run the initial fade on it
+    call    fb_snapshot
+    die_if_neg 5
+
+    # switch to VT7
+    li      s7, 7
+    mv      a0, s6
+    li      a1, VT_ACTIVATE
+    mv      a2, s7
+    li      a7, SYS_ioctl
+    ecall
+    die_if_neg 6
+
+    # wait for it
+    mv      a0, s6
+    li      a1, VT_WAITACTIVE
+    mv      a2, s7
+    li      a7, SYS_ioctl
+    ecall
+    die_if_neg 7
+
+    # set KD_GRAPHICS
+    mv      a0, s6
+    li      a1, KDSETMODE
+    li      a2, KD_GRAPHICS
+    li      a7, SYS_ioctl
+    ecall
+    die_if_neg 8
+
+    ld      ra, 0(sp)
+    addi    sp, sp, 8
     ret
 
 # fb_close — restore text mode, munmap, close fb0 and tty
 fb_close:
+    addi    sp, sp, -8
+    sd      ra, 0(sp)
+
+    call    fb_restore  #restore x11 state and dealloc buffer
+
     # restore KD_TEXT
     mv      a0, s6
     li      a1, KDSETMODE
@@ -245,6 +266,9 @@ fb_close:
     mv      a0, s6
     li      a7, SYS_close
     ecall
+
+    ld      ra, 0(sp)
+    addi    sp, sp, 8
     ret
 
 kb_open:
@@ -268,8 +292,7 @@ kb_open:
 
 # kb_check — returns keycode in a0 if key down event, 0 otherwise
 kb_check:
-    addi    sp, sp, -32
-    sd      ra, 0(sp)
+    addi    sp, sp, -32         # alloc read buffer on stack
 
     mv      a0, s9
     addi    a1, sp, 8
@@ -291,8 +314,7 @@ kb_check:
 .no_key:
     li      a0, 0
 .kb_done:
-    ld      ra, 0(sp)
-    addi    sp, sp, 32
+    addi    sp, sp, 32          # dealloc read buffer
     ret
 
 kb_close:
@@ -306,6 +328,73 @@ kb_close:
     mv      a0, s9
     li      a7, SYS_close
     ecall
+    ret
+
+# fb_snapshot(s1 = fb_base, s5 = fb_size) -> s10 = screen save buffer
+fb_snapshot:
+    .equ PROT_READ,     0x1
+    .equ PROT_WRITE,    0x2
+    .equ MAP_PRIVATE,   0x2
+    .equ MAP_ANONYMOUS, 0x20
+
+    addi    sp, sp, -32
+    sd      ra, 0(sp)
+
+    # alloc
+    li      a0, 0
+    mv      a1, s5              # fb_size
+    li      a2, PROT_READ | PROT_WRITE
+    li      a3, MAP_PRIVATE | MAP_ANONYMOUS
+    li      a4, -1              # fd = -1 for anonymous
+    li      a5, 0
+    li      a7, SYS_mmap
+    ecall
+    bltz    a0, .end
+
+    mv      s10, a0             # s10 = screen save buffer
+    mv      a0, s1              # src = fb_base
+    mv      a1, s10             # dst = save buffer
+    mv      a2, s5              # byte count
+    call    fb_copy
+    li      a0, 0
+
+.end:
+    ld      ra, 0(sp)
+    addi    sp, sp, 32
+    ret
+
+# fb_copy(src=a0, dst=a1, count=a2)
+fb_copy:
+    mv      t0, a0              # src
+    mv      t1, a1              # dst
+    mv      t2, a2              # byte count
+
+.copy:
+    ld      t3, 0(t0)
+    sd      t3, 0(t1)
+    addi    t0, t0, 8
+    addi    t1, t1, 8
+    addi    t2, t2, -8
+    bnez    t2, .copy
+    ret
+
+fb_restore:
+    addi    sp, sp, -32
+    sd      ra, 0(sp)
+
+    mv      a0, s10             # src = fb_base
+    mv      a1, s1              # dst = save buffer
+    mv      a2, s5              # byte count
+    call    fb_copy
+
+    # dealloc
+    mv      a0, s10
+    mv      a1, s5
+    li      a7, SYS_munmap
+    ecall
+
+    ld      ra, 0(sp)
+    addi    sp, sp, 32
     ret
 
 # fill(colour=a0)
