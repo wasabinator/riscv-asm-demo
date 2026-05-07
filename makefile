@@ -9,6 +9,8 @@ else
 endif
 
 ASFLAGS = -mno-relax
+DEPLOY_HOST = cpi@uConsole-R01
+DEPLOY_PATH = /home/cpi
 
 demo: demo.o
 	$(LD) -o $@ $<
@@ -18,4 +20,7 @@ demo: demo.o
 
 clean:
 	rm -f *.o demo
+
+deploy: demo
+	scp demo $(DEPLOY_HOST):$(DEPLOY_PATH)
 
