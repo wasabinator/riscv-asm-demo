@@ -4,6 +4,7 @@
 # stick with fast integer math
 
 .section .data
+.align 8
 .global sin_lut
 sin_lut:
 .byte   0,   3,   6,   9,  12,  15,  18,  21
