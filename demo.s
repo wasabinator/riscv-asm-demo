@@ -48,20 +48,38 @@ _start:
 draw:
     addi    sp, sp, -8
     sd      ra, 0(sp)
+
+    # copy the save buffer to frame buffer
+    mv      a0, s10             # src = save buffer
+    mv      a1, s1              # dst = frame buffer
+    mv      a2, s5              # byte count
+    call    fb_copy
+
 .loop:
+    # increment frame counter
     la      t0, frame
     ld      t1, 0(t0)
     addi    t1, t1, 1
     sd      t1, 0(t0)
+
     li      t2, FRAME_MAX
     bge     t1, t2, .done
-    li      a0, 0x000080FF
-    #call    fill
 
-    mv      a0, s10             # src = fb_base
-    mv      a1, s1              # dst = save buffer
-    mv      a2, s5              # byte count
-    call    fb_copy
+    #li      a0, 0x000080FF
+
+    #mv      a0, s10             # src = save buffer
+    #mv      a1, s1              # dst = frame buffer
+    #mv      a2, s5              # byte count
+    #call    fb_copy
+
+    mv      a0, s1              # fb_base
+    mv      a1, s2              # width
+    mv      a2, s3              # height
+    #mv      a3, t1              # frame index
+    #andi    a3, t1, 500           # frame index / 8
+
+    li      a3, 20
+    call    fill
 
     call    kb_check
     li      t0, KEY_ESC
