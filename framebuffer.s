@@ -273,29 +273,36 @@ fill:
     # to move right, add column size * 4 (4bpp), and to move down, add -4.
 
     slli    t5, a1, 2      # column offset
-    li      t6, -4         # row offset
 
-    # calculate origin (0, height*4)
+    # calculate origin (0, (width-1)*4)
     slli    t0, a1, 2
     add     t1, a0, t0
-    add     t1, t1, t6
+    addi    t1, t1, -4
 
-    sub     t2, a0, a3   # TODO: fb_end - offset
-
-    mv      t3, a2         # number of pixels to write (1 col = row because rotated)
+    li      t2, 500        # number of rows to write
     li      t4, 0x000080FF # clear value
 
-.fill_row:
-    sw      t4, 0(t1)
+.rows:
+    mv      t3, a2         # number of pixels to write (1 col = height because rotated)
+    mv      t6, t1         # copy pos
 
-    #sw      t4, 0(t2)
+.row:
+    sw      t4, 0(t1)
 
     # advance to next column
     add     t1, t1, t5
-    sub     t2, t2, t5
 
+    # check if col done
     addi    t3, t3, -1
-    bgtz    t3, .fill_row
+    bgtz    t3, .row
+
+    # advance to next row
+    addi    t1, t6, -4
+
+    # check if rows done
+    addi    t2, t2, -1
+    bgtz    t2, .rows
+
     li      a0, 0
 
 .done:
