@@ -256,58 +256,6 @@ fb_restore:
     addi    sp, sp, 32
     ret
 
-# fill(fb_base=a0, width=a1, height=a2, frame=a3)
-.global fill
-fill:
-    srli    t0, a2, 1
-    blt     a3, t0, .begin        # frame < height/2?
-
-    li      a0, -1                # -1 = animation is complete
-    j       .done
-
-.begin:
-    # calculate offsets, which is used for moving alone pixels
-    # the display is rotated, so the origin is at the bottom left
-    # of the physical display that the user sees. that means the
-    # origin from the user's view is (0, height).
-    # to move right, add column size * 4 (4bpp), and to move down, add -4.
-
-    slli    t5, a1, 2      # column offset
-
-    # calculate origin (0, (width-1)*4)
-    slli    t0, a1, 2
-    add     t1, a0, t0
-    addi    t1, t1, -4
-
-    li      t2, 500        # number of rows to write
-    li      t4, 0x000080FF # clear value
-
-.rows:
-    mv      t3, a2         # number of pixels to write (1 col = height because rotated)
-    mv      t6, t1         # copy pos
-
-.row:
-    sw      t4, 0(t1)
-
-    # advance to next column
-    add     t1, t1, t5
-
-    # check if col done
-    addi    t3, t3, -1
-    bgtz    t3, .row
-
-    # advance to next row
-    addi    t1, t6, -4
-
-    # check if rows done
-    addi    t2, t2, -1
-    bgtz    t2, .rows
-
-    li      a0, 0
-
-.done:
-    ret
-
 # pixel_addr(x=a0, y=a1) -> a0
 .global pixel_addr
 pixel_addr:

@@ -23,7 +23,8 @@
 # Colour format: 0x00RRGGBB  (R01 is always 32bpp, 4 bytes/pixel)
 
 # Max number of frames
-.equ FRAME_MAX, 20000
+.equ FRAME_MAX,        500
+.equ CYCLES_PER_FRAME, 16666666 # 1GHz CPU
 
 .equ KEY_ESC,             0x01
 
@@ -55,6 +56,8 @@ draw:
     mv      a2, s5              # byte count
     call    fb_copy
 
+    rdcycle s11                 # last frame time
+
 .loop:
     # increment frame counter
     la      t0, frame
@@ -65,25 +68,31 @@ draw:
     li      t2, FRAME_MAX
     bge     t1, t2, .done
 
-    #li      a0, 0x000080FF
-
     #mv      a0, s10             # src = save buffer
     #mv      a1, s1              # dst = frame buffer
     #mv      a2, s5              # byte count
     #call    fb_copy
 
     mv      a0, s1              # fb_base
-    mv      a1, s2              # width
-    mv      a2, s3              # height
-    #mv      a3, t1              # frame index
-    #andi    a3, t1, 500           # frame index / 8
-
-    li      a3, 20
+    mv      a1, s2              # fb_width
+    mv      a2, s3              # fb_height
+    li      a3, 200             # x
+    li      a4, 50              # y
+    mv      a5, t1              # w
+    li      a6, 100             # h
+    li      a7, 0x000080FF      # colour
     call    fill
 
+.wait:
     call    kb_check
     li      t0, KEY_ESC
     bne     a0, t0, .loop
+
+    rdcycle t0
+    sub     t0, t0, s11             # elapsed since last frame
+    li      t1, CYCLES_PER_FRAME
+    blt     t0, t1, .wait           # wait on frame time interval
+    rdcycle s11                     # reset frame timer
 
 .done:
     ld      ra, 0(sp)
