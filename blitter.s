@@ -13,18 +13,18 @@
     # screen is rotated -90 degrees, so the origin point is essentially the
     # start of the last row of words in the framebuffer
 
-    slli    t2, \w, 2      # column offset
+    slli    \out_offset, \w, 2          # column offset (width * 4 bytes)
 
-    # calculate origin (0, (width-1)*4)
+    # calculate origin
     slli    t0, \w, 2
-    add     t1, \base, t0
-    addi    t1, t1, -4
+    addi    t0, t0, -4
+    add     \out_base, \base, t0        # origin = base addr + (width-1) * 4
 
-    # move to (dst_x, dst_y)
-    mul     t0, \x, t2
-    add     t1, t1, t0
+    mul     t0, \x, \out_offset
+    add     \out_base, \out_base, t0    # add x * column offset
+
     slli    t0, \y, 2
-    sub     t1, t1, t0
+    sub     \out_base, \out_base, t0    # subtract y * 4 bytes
 .endm
 
 # fill(dst_buffer=a0, dst_width=a1, dst_height=a2, dst_x=a3, dst_y=a4, dst_w=a5, dst_h=a6, colour=a7)
