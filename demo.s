@@ -24,9 +24,11 @@
 
 # Max number of frames
 .equ FRAME_MAX,        500
-.equ CYCLES_PER_FRAME, 16666666 # 1GHz CPU
+.equ FRAME_RATE,       5
+.equ CYCLES_PER_FRAME, 4000000 #166666660 # 1GHz CPU
+.equ FRAME_TIME,       FRAME_RATE * CYCLES_PER_FRAME
 
-.equ KEY_ESC,             0x01
+.equ KEY_ESC,          0x01
 
 .include "macros.s"
 
@@ -73,26 +75,24 @@ draw:
     #mv      a2, s5              # byte count
     #call    fb_copy
 
-    mv      a0, s1              # fb_base
-    mv      a1, s2              # fb_width
-    mv      a2, s3              # fb_height
-    li      a3, 200             # x
-    li      a4, 50              # y
-    mv      a5, t1              # w
-    li      a6, 100             # h
-    li      a7, 0x000080FF      # colour
-    call    fill
+    mv      a0, s1               # fb_base
+    mv      a1, s2               # fb_width
+    mv      a2, s3               # fb_height
+    mv      a3, t1               # frame
+    li      a7, 0                # colour
+    call    wipe
 
 .wait:
     call    kb_check
     li      t0, KEY_ESC
-    bne     a0, t0, .loop
+    beq     a0, t0, .done
 
     rdcycle t0
     sub     t0, t0, s11             # elapsed since last frame
     li      t1, CYCLES_PER_FRAME
     blt     t0, t1, .wait           # wait on frame time interval
     rdcycle s11                     # reset frame timer
+    j       .loop
 
 .done:
     ld      ra, 0(sp)

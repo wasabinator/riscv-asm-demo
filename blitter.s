@@ -1,4 +1,4 @@
-# BLiT (BLock Image Transfer) operations. Named this blitter as a sign of affection to the Amiga
+# BLiT (BLock Image Transfer) operations.
 #
 # Uses macros heavily to avoid repeated blocks when I add all the various operations.
 # These obviously expand in the assembled code for zero runtime overhead.
@@ -36,9 +36,9 @@
 # the body of the blitter loops.
 # uses t5 & t6 as counters
 .macro blit_loop w, h, stash, innerop, advance
-    mv      t6, \h
+    mv      t6, \w
 1337:
-    mv      t5, \w     # rotated so we loop w * h
+    mv      t5, \h     # rotated so we loop w * h
     \stash             # stash state needed for later advance
 1338:
     \innerop           # inner blit operation goes here
@@ -50,7 +50,7 @@
     bnez    t6, 1337b
 .endm
 
-.macro op_fill fbuffer, colour, xoffset
+.macro op_fill
     sw      a7, 0(t1)
     add     t1, t1, t2
 .endm
@@ -65,4 +65,56 @@ fill:
 
     # run the blit loop, we only need to copy t1 as we are only writing to one frame buffer
     blit_loop a5, a6, "mv t3, t1", op_fill, "addi t1, t3, -4"
+    ret
+
+# wipe(fbuffer=a0, fbwidth=a1, fbheight=a2, frame=a3)
+.global wipe
+wipe:
+    li      t0, 65
+    blt     a3, t0, .draw
+    li      a0, -1
+    j       .done
+
+.draw:
+    srli    t3, a1, 1     # half the width as we are running two blits
+
+    la      t1, sin_lut
+    add     t1, t1, a3
+
+    li      t2, 127
+
+    lb      t0, 64(t1)
+    sub     t0, t2, t0    # 127 - sin[64+0]
+    mul     t0, t0, t3
+    srli    t0, t0, 7     # (w * (127 - sin[0])) / 128
+
+    lb      t1, 65(t1)
+    sub     t1, t2, t1    # 127 - sin[64+1]
+    mul     t1, t1, t3
+    srli    t1, t1, 7     # (w * (127 - sin[1])) / 128
+
+    sub     t1, t1, t0    # sin[2] - sin[1]
+    bnez    t1, .blt
+    li      t1, 1         # min 1 row
+
+.blt:
+    li      a3, 0
+    mv      a4, t0 # x
+    mv      a5, t1 # h
+    mv      a6, a2
+
+    # paint top half
+    calc_origin a0, a1, a2, a3, a4, t1, t2
+    blit_loop a5, a6, "mv t3, t1", op_fill, "addi t1, t3, -4"
+
+    # paint bottom half
+    add     a4, a4, a5    # x + h
+    sub     a4, a1, a4    # width - x + h
+
+    calc_origin a0, a1, a2, a3, a4, t1, t2
+    blit_loop a5, a6, "mv t3, t1", op_fill, "addi t1, t3, -4"
+
+    li      a0, 0
+
+.done:
     ret
